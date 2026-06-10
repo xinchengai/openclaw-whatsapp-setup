@@ -60,6 +60,7 @@ openclaw channels login --channel whatsapp
 | `--allow-from` | 允许发消息的手机号，多个用逗号或空格分隔，必须使用 `+国家码` 格式 |
 | `--login` | 配置完成后执行 `openclaw channels login --channel whatsapp` |
 | `--install-plugin` | 安装 npm 版 `@openclaw/whatsapp` 插件，默认匹配当前 OpenClaw 版本 |
+| `--restart` | 配置完成后执行 `openclaw config validate`、重启 Gateway，并显示 channel 状态 |
 | `--plugin-version` | 指定 WhatsApp 插件版本，例如 `2026.5.19` |
 | `--plugin-spec` | 指定完整 npm 包，例如 `@openclaw/whatsapp@2026.5.19` |
 | `--no-restart-hint` | 不显示重启提示 |

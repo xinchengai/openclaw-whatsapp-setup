@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-SCRIPT_VERSION="1.0.3"
+SCRIPT_VERSION="1.0.4"
 OPENCLAW_CONFIG="${OPENCLAW_CONFIG:-$HOME/.openclaw/openclaw.json}"
 OPENCLAW_WHATSAPP_PACKAGE_DIR="${OPENCLAW_WHATSAPP_PACKAGE_DIR:-$HOME/.openclaw/npm/node_modules/@openclaw/whatsapp}"
 
@@ -34,6 +34,7 @@ OpenClaw WhatsApp 白名单配置脚本 v${SCRIPT_VERSION}
 选项:
   --login                    配置后执行扫码登录
   --install-plugin           安装与当前 OpenClaw 版本匹配的 npm 版 @openclaw/whatsapp 插件
+  --restart                  配置后验证配置、重启 Gateway，并显示 channel 状态
   --plugin-version VERSION   指定 @openclaw/whatsapp 版本，默认使用当前 OpenClaw 版本
   --plugin-spec SPEC         指定完整 npm 包，例如 @openclaw/whatsapp@2026.5.19
   --no-restart-hint          不显示重启提示
@@ -43,7 +44,7 @@ OpenClaw WhatsApp 白名单配置脚本 v${SCRIPT_VERSION}
   $0
   $0 --allow-from "+86150XXXXXXX,+86189XXXXXXX"
   $0 --allow-from "+852XXXXXXX" --login
-  $0 --allow-from "+86150XXXXXXX +86189XXXXXXX" --install-plugin --login
+  $0 --allow-from "+86150XXXXXXX +86189XXXXXXX" --install-plugin --restart
 
 说明:
   - 本脚本使用 channels.whatsapp.dmPolicy="allowlist"，不会给陌生人发送配对码
@@ -226,6 +227,7 @@ main() {
     local allow_from=""
     local do_login="false"
     local do_install="false"
+    local do_restart="false"
     local show_restart_hint="true"
     local plugin_version=""
     local plugin_spec=""
@@ -244,6 +246,10 @@ main() {
                 ;;
             --install-plugin)
                 do_install="true"
+                shift
+                ;;
+            --restart)
+                do_restart="true"
                 shift
                 ;;
             --plugin-version)
@@ -309,6 +315,13 @@ main() {
         echo "建议执行:"
         echo "  openclaw config validate && openclaw gateway restart"
         echo ""
+    fi
+
+    if [ "$do_restart" = "true" ]; then
+        info "验证配置并重启 OpenClaw Gateway"
+        openclaw config validate
+        openclaw gateway restart
+        openclaw channels status --probe
     fi
 
     if [ "$do_login" = "true" ]; then
