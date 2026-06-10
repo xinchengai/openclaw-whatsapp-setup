@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-SCRIPT_VERSION="1.0.1"
+SCRIPT_VERSION="1.0.2"
 OPENCLAW_CONFIG="${OPENCLAW_CONFIG:-$HOME/.openclaw/openclaw.json}"
 OPENCLAW_WHATSAPP_PACKAGE_DIR="${OPENCLAW_WHATSAPP_PACKAGE_DIR:-$HOME/.openclaw/npm/node_modules/@openclaw/whatsapp}"
 
@@ -25,14 +25,13 @@ usage() {
 OpenClaw WhatsApp 白名单配置脚本 v${SCRIPT_VERSION}
 
 用法:
-  $0 --allow-from NUMBERS [选项]
+  $0 [选项]
 
-必需参数:
+参数:
   --allow-from NUMBERS       允许发消息的手机号，多个用逗号或空格分隔
                              示例: "+86150XXXXXXX,+86189XXXXXXX"
 
 选项:
-  --account ID               WhatsApp account id，默认 default
   --login                    配置后执行扫码登录
   --install-plugin           安装与当前 OpenClaw 版本匹配的 npm 版 @openclaw/whatsapp 插件
   --plugin-version VERSION   指定 @openclaw/whatsapp 版本，默认使用当前 OpenClaw 版本
@@ -41,13 +40,15 @@ OpenClaw WhatsApp 白名单配置脚本 v${SCRIPT_VERSION}
   --help                     显示帮助
 
 示例:
+  $0
   $0 --allow-from "+86150XXXXXXX,+86189XXXXXXX"
   $0 --allow-from "+852XXXXXXX" --login
-  $0 --account work --allow-from "+86150XXXXXXX +86189XXXXXXX" --install-plugin --login
+  $0 --allow-from "+86150XXXXXXX +86189XXXXXXX" --install-plugin --login
 
 说明:
   - 本脚本使用 channels.whatsapp.dmPolicy="allowlist"，不会给陌生人发送配对码
   - allowFrom 应填写允许和 WhatsApp bot 对话的用户手机号，使用 +国家码 的国际格式
+  - 脚本固定配置默认 WhatsApp account
   - 如果配置里存在 plugins.allow，本脚本只会追加插件 id: whatsapp
   - 如果之前误装了不兼容的 @openclaw/whatsapp，使用 --install-plugin 会先清理后重装匹配版本
 EOF
@@ -132,12 +133,11 @@ PY
 
 configure_whatsapp() {
     local allow_from_raw="$1"
-    local account_id="$2"
     local numbers_json
 
     numbers_json="$(normalize_numbers_json "$allow_from_raw")"
 
-    python3 - "$OPENCLAW_CONFIG" "$numbers_json" "$account_id" << 'PY'
+    python3 - "$OPENCLAW_CONFIG" "$numbers_json" << 'PY'
 import json
 import os
 import shutil
@@ -146,7 +146,6 @@ from datetime import datetime
 
 config_path = os.path.expanduser(sys.argv[1])
 allow_from = json.loads(sys.argv[2])
-account_id = sys.argv[3]
 
 if os.path.exists(config_path):
     backup_path = config_path + f".backup-whatsapp-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -173,16 +172,8 @@ whatsapp_entry.setdefault("config", {})
 channels = config.setdefault("channels", {})
 whatsapp = channels.setdefault("whatsapp", {})
 whatsapp["enabled"] = True
-
-if account_id == "default":
-    whatsapp["dmPolicy"] = "allowlist"
-    whatsapp["allowFrom"] = allow_from
-else:
-    accounts = whatsapp.setdefault("accounts", {})
-    account = accounts.setdefault(account_id, {})
-    account["enabled"] = True
-    account["dmPolicy"] = "allowlist"
-    account["allowFrom"] = allow_from
+whatsapp["dmPolicy"] = "allowlist"
+whatsapp["allowFrom"] = allow_from
 
 os.makedirs(os.path.dirname(config_path), exist_ok=True)
 with open(config_path, "w", encoding="utf-8") as f:
@@ -193,7 +184,7 @@ if backup_path:
     print(f"已备份配置到: {backup_path}")
 else:
     print("未发现旧配置，已创建新配置文件")
-print(f"WhatsApp account: {account_id}")
+print("WhatsApp account: default")
 print("allowFrom:")
 for number in allow_from:
     print(f"  - {number}")
@@ -226,7 +217,6 @@ cleanup_whatsapp_plugin_dir() {
 
 main() {
     local allow_from=""
-    local account_id="default"
     local do_login="false"
     local do_install="false"
     local show_restart_hint="true"
@@ -239,10 +229,6 @@ main() {
             --help) usage ;;
             --allow-from)
                 allow_from="${2:-}"
-                shift 2
-                ;;
-            --account)
-                account_id="${2:-}"
                 shift 2
                 ;;
             --login)
@@ -287,21 +273,13 @@ main() {
     if [ -z "$allow_from" ]; then
         if [ -t 0 ]; then
             read -r -p "允许发消息的手机号(多个用逗号分隔): " allow_from
-            read -r -p "WhatsApp account id [default]: " input_account
-            if [ -n "$input_account" ]; then
-                account_id="$input_account"
-            fi
         else
             error "缺少必需参数: --allow-from"
             usage
         fi
     fi
 
-    if [ -z "$account_id" ]; then
-        account_id="default"
-    fi
-
-    configure_whatsapp "$allow_from" "$account_id"
+    configure_whatsapp "$allow_from"
 
     if [ "$do_install" = "true" ]; then
         if [ -z "$plugin_spec" ]; then
@@ -328,18 +306,10 @@ main() {
 
     if [ "$do_login" = "true" ]; then
         info "开始 WhatsApp 扫码登录"
-        if [ "$account_id" = "default" ]; then
-            openclaw channels login --channel whatsapp
-        else
-            openclaw channels login --channel whatsapp --account "$account_id"
-        fi
+        openclaw channels login --channel whatsapp
     else
         echo "扫码登录:"
-        if [ "$account_id" = "default" ]; then
-            echo "  openclaw channels login --channel whatsapp"
-        else
-            echo "  openclaw channels login --channel whatsapp --account $account_id"
-        fi
+        echo "  openclaw channels login --channel whatsapp"
         echo ""
         echo "状态检查:"
         echo "  openclaw channels status --channel whatsapp"

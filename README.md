@@ -14,13 +14,15 @@
 
 ## 使用
 
-下载并运行：
+下载并交互运行：
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/xinchengai/openclaw-whatsapp-setup/main/setup_whatsapp_allowlist.sh > setup_whatsapp_allowlist.sh && chmod +x setup_whatsapp_allowlist.sh
+curl -sSL https://raw.githubusercontent.com/xinchengai/openclaw-whatsapp-setup/main/setup_whatsapp_allowlist.sh > setup_whatsapp_allowlist.sh && chmod +x setup_whatsapp_allowlist.sh && ./setup_whatsapp_allowlist.sh --install-plugin --login
 ```
 
-配置多个允许访问的手机号：
+脚本会提示你输入允许访问的手机号，多个号码用逗号分隔。
+
+也可以直接用参数传入手机号：
 
 ```bash
 ./setup_whatsapp_allowlist.sh --allow-from "+86150XXXXXXX,+86189XXXXXXX"
@@ -56,7 +58,6 @@ openclaw channels login --channel whatsapp
 | 参数 | 说明 |
 |------|------|
 | `--allow-from` | 允许发消息的手机号，多个用逗号或空格分隔，必须使用 `+国家码` 格式 |
-| `--account` | WhatsApp account id，默认 `default` |
 | `--login` | 配置完成后执行 `openclaw channels login --channel whatsapp` |
 | `--install-plugin` | 安装 npm 版 `@openclaw/whatsapp` 插件，默认匹配当前 OpenClaw 版本 |
 | `--plugin-version` | 指定 WhatsApp 插件版本，例如 `2026.5.19` |
@@ -67,6 +68,7 @@ openclaw channels login --channel whatsapp
 
 - `allowFrom` 应填写允许给 WhatsApp bot 号发消息的用户手机号，不一定是扫码登录的 bot 号。
 - 如果你想允许多个号码，重新执行脚本并传入完整列表即可；脚本会覆盖旧的 `allowFrom`。
+- 脚本固定配置默认 WhatsApp account，适合大多数单 WhatsApp bot 号场景。
 - OpenClaw 2026.5.19 应安装 `@openclaw/whatsapp@2026.5.19`。脚本会自动按当前 OpenClaw 版本选择插件版本。
 - `plugins.allow` 里应该写插件 id `whatsapp`，不是 npm 包名 `@openclaw/whatsapp`。脚本会自动清理旧的错误项。
 - 如果你之前误装过不兼容的新版本插件，重新执行 `--install-plugin` 会先移除本地 WhatsApp 插件目录，再安装匹配版本。
