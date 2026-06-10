@@ -5,8 +5,9 @@
 
 set -euo pipefail
 
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.0.1"
 OPENCLAW_CONFIG="${OPENCLAW_CONFIG:-$HOME/.openclaw/openclaw.json}"
+OPENCLAW_WHATSAPP_PACKAGE_DIR="${OPENCLAW_WHATSAPP_PACKAGE_DIR:-$HOME/.openclaw/npm/node_modules/@openclaw/whatsapp}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -33,7 +34,9 @@ OpenClaw WhatsApp 白名单配置脚本 v${SCRIPT_VERSION}
 选项:
   --account ID               WhatsApp account id，默认 default
   --login                    配置后执行扫码登录
-  --install-plugin           先尝试安装 npm 版 @openclaw/whatsapp 插件
+  --install-plugin           安装与当前 OpenClaw 版本匹配的 npm 版 @openclaw/whatsapp 插件
+  --plugin-version VERSION   指定 @openclaw/whatsapp 版本，默认使用当前 OpenClaw 版本
+  --plugin-spec SPEC         指定完整 npm 包，例如 @openclaw/whatsapp@2026.5.19
   --no-restart-hint          不显示重启提示
   --help                     显示帮助
 
@@ -45,7 +48,8 @@ OpenClaw WhatsApp 白名单配置脚本 v${SCRIPT_VERSION}
 说明:
   - 本脚本使用 channels.whatsapp.dmPolicy="allowlist"，不会给陌生人发送配对码
   - allowFrom 应填写允许和 WhatsApp bot 对话的用户手机号，使用 +国家码 的国际格式
-  - 如果配置里存在 plugins.allow，本脚本会自动追加 whatsapp 和 @openclaw/whatsapp
+  - 如果配置里存在 plugins.allow，本脚本只会追加插件 id: whatsapp
+  - 如果之前误装了不兼容的 @openclaw/whatsapp，使用 --install-plugin 会先清理后重装匹配版本
 EOF
     exit 0
 }
@@ -55,7 +59,46 @@ check_openclaw() {
         error "OpenClaw 未安装。请先安装 OpenClaw。"
         exit 1
     fi
-    info "OpenClaw 版本: $(openclaw -v 2>/dev/null | head -1)"
+}
+
+detect_openclaw_version() {
+    local version_line
+    local version
+
+    version_line="$(openclaw -v 2>&1 | head -1 || true)"
+    version="$(printf '%s\n' "$version_line" | sed -nE 's/.*OpenClaw ([0-9]{4}\.[0-9]+\.[0-9]+).*/\1/p' | head -1)"
+    if [ -n "$version" ]; then
+        printf '%s\n' "$version"
+        return 0
+    fi
+
+    python3 << 'PY' 2>/dev/null || true
+import json
+import os
+import subprocess
+
+paths = [
+    "/usr/local/lib/node_modules/openclaw/package.json",
+    "/opt/homebrew/lib/node_modules/openclaw/package.json",
+]
+
+try:
+    npm_root = subprocess.check_output(["npm", "root", "-g"], text=True).strip()
+    if npm_root:
+        paths.append(os.path.join(npm_root, "openclaw", "package.json"))
+except Exception:
+    pass
+
+for path in paths:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            version = json.load(f).get("version")
+        if version:
+            print(version)
+            break
+    except Exception:
+        continue
+PY
 }
 
 normalize_numbers_json() {
@@ -117,11 +160,12 @@ else:
 plugins = config.setdefault("plugins", {})
 plugins["enabled"] = True
 plugin_allow = plugins.setdefault("allow", [])
-for plugin_id in ("whatsapp", "@openclaw/whatsapp"):
-    if plugin_id not in plugin_allow:
-        plugin_allow.append(plugin_id)
+plugins["allow"] = [item for item in plugin_allow if item != "@openclaw/whatsapp"]
+if "whatsapp" not in plugins["allow"]:
+    plugins["allow"].append("whatsapp")
 
 plugin_entries = plugins.setdefault("entries", {})
+plugin_entries.pop("@openclaw/whatsapp", None)
 whatsapp_entry = plugin_entries.setdefault("whatsapp", {})
 whatsapp_entry["enabled"] = True
 whatsapp_entry.setdefault("config", {})
@@ -153,16 +197,30 @@ print(f"WhatsApp account: {account_id}")
 print("allowFrom:")
 for number in allow_from:
     print(f"  - {number}")
-print("已启用 WhatsApp channel，并追加 plugins.allow: whatsapp, @openclaw/whatsapp")
+print("已启用 WhatsApp channel，并设置 plugins.allow: whatsapp")
 PY
 }
 
 install_plugin() {
-    info "尝试安装 npm 版 @openclaw/whatsapp 插件"
-    if openclaw plugins install @openclaw/whatsapp; then
+    local plugin_spec="$1"
+
+    info "准备安装 WhatsApp 插件: ${plugin_spec}"
+    cleanup_whatsapp_plugin_dir
+
+    if openclaw plugins install "$plugin_spec"; then
         success "WhatsApp 插件安装命令已完成"
+    elif openclaw plugins install "$plugin_spec" --force; then
+        success "WhatsApp 插件已使用 --force 重新安装"
     else
-        warn "插件安装命令失败。你仍可稍后运行 openclaw channels login --channel whatsapp，并在提示时选择 npm 版。"
+        warn "插件安装命令失败。请确认 OpenClaw 版本与插件版本兼容后重试。"
+        return 1
+    fi
+}
+
+cleanup_whatsapp_plugin_dir() {
+    if [ -d "$OPENCLAW_WHATSAPP_PACKAGE_DIR" ]; then
+        warn "发现已安装的 WhatsApp 插件目录，将先移除以避免版本不兼容: $OPENCLAW_WHATSAPP_PACKAGE_DIR"
+        rm -rf "$OPENCLAW_WHATSAPP_PACKAGE_DIR"
     fi
 }
 
@@ -172,6 +230,9 @@ main() {
     local do_login="false"
     local do_install="false"
     local show_restart_hint="true"
+    local plugin_version=""
+    local plugin_spec=""
+    local openclaw_version=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -192,6 +253,14 @@ main() {
                 do_install="true"
                 shift
                 ;;
+            --plugin-version)
+                plugin_version="${2:-}"
+                shift 2
+                ;;
+            --plugin-spec)
+                plugin_spec="${2:-}"
+                shift 2
+                ;;
             --no-restart-hint)
                 show_restart_hint="false"
                 shift
@@ -204,6 +273,16 @@ main() {
     done
 
     check_openclaw
+    if [ "$do_install" = "true" ]; then
+        cleanup_whatsapp_plugin_dir
+    fi
+
+    openclaw_version="$(detect_openclaw_version | head -1 || true)"
+    if [ -n "$openclaw_version" ]; then
+        info "OpenClaw 版本: ${openclaw_version}"
+    else
+        warn "无法自动识别 OpenClaw 版本。如果要安装插件，请使用 --plugin-version 或 --plugin-spec 指定。"
+    fi
 
     if [ -z "$allow_from" ]; then
         if [ -t 0 ]; then
@@ -225,7 +304,17 @@ main() {
     configure_whatsapp "$allow_from" "$account_id"
 
     if [ "$do_install" = "true" ]; then
-        install_plugin
+        if [ -z "$plugin_spec" ]; then
+            if [ -z "$plugin_version" ]; then
+                plugin_version="$openclaw_version"
+            fi
+            if [ -z "$plugin_version" ]; then
+                error "无法确定插件版本。请重试并加上 --plugin-version，例如 --plugin-version 2026.5.19"
+                exit 1
+            fi
+            plugin_spec="@openclaw/whatsapp@${plugin_version}"
+        fi
+        install_plugin "$plugin_spec"
     fi
 
     success "WhatsApp 白名单配置完成"
