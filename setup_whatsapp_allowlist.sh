@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-SCRIPT_VERSION="1.0.4"
+SCRIPT_VERSION="1.1.0"
 OPENCLAW_CONFIG="${OPENCLAW_CONFIG:-$HOME/.openclaw/openclaw.json}"
 OPENCLAW_WHATSAPP_PACKAGE_DIR="${OPENCLAW_WHATSAPP_PACKAGE_DIR:-$HOME/.openclaw/npm/node_modules/@openclaw/whatsapp}"
 
@@ -32,9 +32,12 @@ OpenClaw WhatsApp 白名单配置脚本 v${SCRIPT_VERSION}
                              示例: "+86150XXXXXXX,+86189XXXXXXX"
 
 选项:
-  --login                    配置后执行扫码登录
-  --install-plugin           安装与当前 OpenClaw 版本匹配的 npm 版 @openclaw/whatsapp 插件
-  --restart                  配置后验证配置、重启 Gateway，并显示 channel 状态
+  --login                    执行扫码登录，默认开启
+  --install-plugin           安装与当前 OpenClaw 版本匹配的 npm 版 @openclaw/whatsapp 插件，默认开启
+  --restart                  验证配置、重启 Gateway，并显示 channel 状态，默认开启
+  --no-login                 不执行扫码登录
+  --no-install-plugin        不安装插件
+  --no-restart               不自动验证配置/重启 Gateway/显示状态
   --plugin-version VERSION   指定 @openclaw/whatsapp 版本，默认使用当前 OpenClaw 版本
   --plugin-spec SPEC         指定完整 npm 包，例如 @openclaw/whatsapp@2026.5.19
   --no-restart-hint          不显示重启提示
@@ -43,8 +46,8 @@ OpenClaw WhatsApp 白名单配置脚本 v${SCRIPT_VERSION}
 示例:
   $0
   $0 --allow-from "+86150XXXXXXX,+86189XXXXXXX"
-  $0 --allow-from "+852XXXXXXX" --login
-  $0 --allow-from "+86150XXXXXXX +86189XXXXXXX" --install-plugin --restart
+  $0 --allow-from "+852XXXXXXX"
+  $0 --allow-from "+86150XXXXXXX +86189XXXXXXX" --plugin-version 2026.5.19
 
 说明:
   - 本脚本使用 channels.whatsapp.dmPolicy="allowlist"，不会给陌生人发送配对码
@@ -62,6 +65,18 @@ check_openclaw() {
         error "OpenClaw 未安装。请先安装 OpenClaw。"
         exit 1
     fi
+}
+
+is_whatsapp_plugin_compatible() {
+    if [ ! -d "$OPENCLAW_WHATSAPP_PACKAGE_DIR" ]; then
+        return 1
+    fi
+
+    if openclaw channels status --channel whatsapp >/dev/null 2>&1; then
+        return 0
+    fi
+
+    return 1
 }
 
 detect_openclaw_version() {
@@ -203,17 +218,34 @@ PY
 install_plugin() {
     local plugin_spec="$1"
 
+    if is_whatsapp_plugin_compatible; then
+        info "WhatsApp 插件已可用，跳过重复安装"
+        return 0
+    fi
+
     info "准备安装 WhatsApp 插件: ${plugin_spec}"
-    cleanup_whatsapp_plugin_dir
 
     if openclaw plugins install "$plugin_spec"; then
         success "WhatsApp 插件安装命令已完成"
-    elif openclaw plugins install "$plugin_spec" --force; then
-        success "WhatsApp 插件已使用 --force 重新安装"
     else
-        warn "插件安装命令失败。请确认 OpenClaw 版本与插件版本兼容后重试。"
-        return 1
+        warn "插件安装失败，准备清理本地 WhatsApp 插件目录后强制重装。"
+        cleanup_whatsapp_plugin_dir
+        if openclaw plugins install "$plugin_spec" --force; then
+            success "WhatsApp 插件已使用 --force 重新安装"
+        else
+            warn "插件安装命令失败。请确认 OpenClaw 版本与插件版本兼容后重试。"
+            return 1
+        fi
     fi
+}
+
+restart_gateway_and_status() {
+    local stage="$1"
+
+    info "${stage}: 验证配置并重启 OpenClaw Gateway"
+    openclaw config validate
+    openclaw gateway restart
+    openclaw channels status --probe
 }
 
 cleanup_whatsapp_plugin_dir() {
@@ -225,9 +257,9 @@ cleanup_whatsapp_plugin_dir() {
 
 main() {
     local allow_from=""
-    local do_login="false"
-    local do_install="false"
-    local do_restart="false"
+    local do_login="true"
+    local do_install="true"
+    local do_restart="true"
     local show_restart_hint="true"
     local plugin_version=""
     local plugin_spec=""
@@ -244,12 +276,24 @@ main() {
                 do_login="true"
                 shift
                 ;;
+            --no-login)
+                do_login="false"
+                shift
+                ;;
             --install-plugin)
                 do_install="true"
                 shift
                 ;;
+            --no-install-plugin)
+                do_install="false"
+                shift
+                ;;
             --restart)
                 do_restart="true"
+                shift
+                ;;
+            --no-restart)
+                do_restart="false"
                 shift
                 ;;
             --plugin-version)
@@ -272,10 +316,6 @@ main() {
     done
 
     check_openclaw
-    if [ "$do_install" = "true" ]; then
-        cleanup_whatsapp_plugin_dir
-    fi
-
     openclaw_version="$(detect_openclaw_version | head -1 || true)"
     if [ -n "$openclaw_version" ]; then
         info "OpenClaw 版本: ${openclaw_version}"
@@ -311,22 +351,22 @@ main() {
     success "WhatsApp 白名单配置完成"
     echo ""
 
-    if [ "$show_restart_hint" = "true" ]; then
+    if [ "$show_restart_hint" = "true" ] && [ "$do_restart" != "true" ]; then
         echo "建议执行:"
         echo "  openclaw config validate && openclaw gateway restart"
         echo ""
     fi
 
     if [ "$do_restart" = "true" ]; then
-        info "验证配置并重启 OpenClaw Gateway"
-        openclaw config validate
-        openclaw gateway restart
-        openclaw channels status --probe
+        restart_gateway_and_status "登录前"
     fi
 
     if [ "$do_login" = "true" ]; then
         info "开始 WhatsApp 扫码登录"
-        openclaw channels login --channel whatsapp
+        openclaw channels login --channel whatsapp --verbose
+        if [ "$do_restart" = "true" ]; then
+            restart_gateway_and_status "登录后"
+        fi
     else
         echo "扫码登录:"
         echo "  openclaw channels login --channel whatsapp"

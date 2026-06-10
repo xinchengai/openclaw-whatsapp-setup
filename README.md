@@ -9,7 +9,7 @@
 - 支持多个 `allowFrom` 手机号
 - 自动把插件 id `whatsapp` 加入 `plugins.allow`
 - 可安装与当前 OpenClaw 版本匹配的 npm 版 WhatsApp 插件
-- 可触发扫码登录
+- 自动重启 Gateway、触发扫码登录，并显示最终状态
 - 修改前自动备份 `~/.openclaw/openclaw.json`
 
 ## 使用
@@ -17,34 +17,15 @@
 下载并交互运行：
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/xinchengai/openclaw-whatsapp-setup/main/setup_whatsapp_allowlist.sh > setup_whatsapp_allowlist.sh && chmod +x setup_whatsapp_allowlist.sh && ./setup_whatsapp_allowlist.sh --install-plugin --login
+curl -sSL https://raw.githubusercontent.com/xinchengai/openclaw-whatsapp-setup/main/setup_whatsapp_allowlist.sh > setup_whatsapp_allowlist.sh && chmod +x setup_whatsapp_allowlist.sh && ./setup_whatsapp_allowlist.sh
 ```
 
-脚本会提示你输入允许访问的手机号，多个号码用逗号分隔。
+脚本会提示你输入允许访问的手机号，多个号码用逗号分隔。默认完整流程会安装匹配版本插件、重启 Gateway、扫码登录、再次重启并显示最终状态。
 
 也可以直接用参数传入手机号：
 
 ```bash
 ./setup_whatsapp_allowlist.sh --allow-from "+86150XXXXXXX,+86189XXXXXXX"
-```
-
-配置后执行：
-
-```bash
-openclaw config validate && openclaw gateway restart
-openclaw channels login --channel whatsapp
-```
-
-也可以配置后直接进入扫码登录：
-
-```bash
-./setup_whatsapp_allowlist.sh --allow-from "+86150XXXXXXX,+86189XXXXXXX" --login
-```
-
-如果 WhatsApp 插件还没安装，可以加：
-
-```bash
-./setup_whatsapp_allowlist.sh --allow-from "+86150XXXXXXX,+86189XXXXXXX" --install-plugin --login
 ```
 
 不带参数运行时，也可以交互输入手机号：
@@ -58,9 +39,12 @@ openclaw channels login --channel whatsapp
 | 参数 | 说明 |
 |------|------|
 | `--allow-from` | 允许发消息的手机号，多个用逗号或空格分隔，必须使用 `+国家码` 格式 |
-| `--login` | 配置完成后执行 `openclaw channels login --channel whatsapp` |
-| `--install-plugin` | 安装 npm 版 `@openclaw/whatsapp` 插件，默认匹配当前 OpenClaw 版本 |
-| `--restart` | 配置完成后执行 `openclaw config validate`、重启 Gateway，并显示 channel 状态 |
+| `--login` | 执行 `openclaw channels login --channel whatsapp --verbose`，默认开启 |
+| `--install-plugin` | 安装 npm 版 `@openclaw/whatsapp` 插件，默认开启并匹配当前 OpenClaw 版本 |
+| `--restart` | 执行 `openclaw config validate`、重启 Gateway，并显示 channel 状态，默认开启 |
+| `--no-login` | 不执行扫码登录 |
+| `--no-install-plugin` | 不安装插件 |
+| `--no-restart` | 不自动验证配置/重启 Gateway/显示状态 |
 | `--plugin-version` | 指定 WhatsApp 插件版本，例如 `2026.5.19` |
 | `--plugin-spec` | 指定完整 npm 包，例如 `@openclaw/whatsapp@2026.5.19` |
 | `--no-restart-hint` | 不显示重启提示 |
@@ -74,7 +58,7 @@ openclaw channels login --channel whatsapp
 - OpenClaw 2026.5.19 应安装 `@openclaw/whatsapp@2026.5.19`。脚本会自动按当前 OpenClaw 版本选择插件版本。
 - `plugins.allow` 里应该写插件 id `whatsapp`，不是 npm 包名 `@openclaw/whatsapp`。脚本会自动清理旧的错误项。
 - 如果你之前误装过不兼容的新版本插件，重新执行 `--install-plugin` 会先移除本地 WhatsApp 插件目录，再安装匹配版本。
-- 修改配置后需要重启 Gateway：
+- 脚本默认会重启 Gateway。只有使用 `--no-restart` 时，才需要手动执行：
 
 ```bash
 openclaw config validate && openclaw gateway restart
