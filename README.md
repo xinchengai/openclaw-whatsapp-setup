@@ -69,6 +69,7 @@ openclaw channels login --channel whatsapp
 - `allowFrom` 应填写允许给 WhatsApp bot 号发消息的用户手机号，不一定是扫码登录的 bot 号。
 - 如果你想允许多个号码，重新执行脚本并传入完整列表即可；脚本会覆盖旧的 `allowFrom`。
 - 脚本固定配置默认 WhatsApp account，适合大多数单 WhatsApp bot 号场景。
+- 重新执行脚本会清理旧的 `channels.whatsapp.accounts`，避免误写 account id 导致登录异常。
 - OpenClaw 2026.5.19 应安装 `@openclaw/whatsapp@2026.5.19`。脚本会自动按当前 OpenClaw 版本选择插件版本。
 - `plugins.allow` 里应该写插件 id `whatsapp`，不是 npm 包名 `@openclaw/whatsapp`。脚本会自动清理旧的错误项。
 - 如果你之前误装过不兼容的新版本插件，重新执行 `--install-plugin` 会先移除本地 WhatsApp 插件目录，再安装匹配版本。

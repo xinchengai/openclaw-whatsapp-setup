@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-SCRIPT_VERSION="1.0.2"
+SCRIPT_VERSION="1.0.3"
 OPENCLAW_CONFIG="${OPENCLAW_CONFIG:-$HOME/.openclaw/openclaw.json}"
 OPENCLAW_WHATSAPP_PACKAGE_DIR="${OPENCLAW_WHATSAPP_PACKAGE_DIR:-$HOME/.openclaw/npm/node_modules/@openclaw/whatsapp}"
 
@@ -49,6 +49,7 @@ OpenClaw WhatsApp 白名单配置脚本 v${SCRIPT_VERSION}
   - 本脚本使用 channels.whatsapp.dmPolicy="allowlist"，不会给陌生人发送配对码
   - allowFrom 应填写允许和 WhatsApp bot 对话的用户手机号，使用 +国家码 的国际格式
   - 脚本固定配置默认 WhatsApp account
+  - 脚本会清理旧的 channels.whatsapp.accounts，避免误写 account id 导致登录异常
   - 如果配置里存在 plugins.allow，本脚本只会追加插件 id: whatsapp
   - 如果之前误装了不兼容的 @openclaw/whatsapp，使用 --install-plugin 会先清理后重装匹配版本
 EOF
@@ -171,6 +172,8 @@ whatsapp_entry.setdefault("config", {})
 
 channels = config.setdefault("channels", {})
 whatsapp = channels.setdefault("whatsapp", {})
+removed_accounts = sorted((whatsapp.get("accounts") or {}).keys()) if isinstance(whatsapp.get("accounts"), dict) else []
+whatsapp.pop("accounts", None)
 whatsapp["enabled"] = True
 whatsapp["dmPolicy"] = "allowlist"
 whatsapp["allowFrom"] = allow_from
@@ -185,6 +188,10 @@ if backup_path:
 else:
     print("未发现旧配置，已创建新配置文件")
 print("WhatsApp account: default")
+if removed_accounts:
+    print("已清理旧 WhatsApp accounts:")
+    for account in removed_accounts:
+        print(f"  - {account}")
 print("allowFrom:")
 for number in allow_from:
     print(f"  - {number}")
